@@ -1,6 +1,7 @@
 import SwiftUI
 import RealityKit
 import RealityKitContent
+import PhotosUI
 
 // MARK: - カードの基本サイズ定数（make/update closure 間で共有）
 private let kCardWidth:  Float = 0.3
@@ -41,6 +42,9 @@ struct ContentView: View {
     // ドラッグ回転状態
     @State private var dragRotation: simd_quatf = .init(angle: 0, axis: [0, 1, 0])
     @State private var baseRotation: simd_quatf = .init(angle: 0, axis: [0, 1, 0])
+
+    // 写真選択用
+    @State private var selectedItem: PhotosPickerItem?
 
     // 各 Entity への参照（表示制御に使用）
     @State private var cardRootEntity:    Entity?
@@ -205,6 +209,21 @@ struct ContentView: View {
                 resetCardTransform()
             }
         }
+        // 「写真を撮る（選択）」ボタン
+        .ornament(attachmentAnchor: .scene(.top)) {
+            PhotosPicker(selection: $selectedItem,
+                         matching: .images,
+                         photoLibrary: .shared()) {
+                Label("写真を選択", systemImage: "photo.on.rectangle.angled")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .padding()
+            .glassBackgroundEffect()
+        }
         // 「空間に入る / 現実に戻る」ボタン (トグル)
         .ornament(attachmentAnchor: .scene(.bottom)) {
             Button {
@@ -234,6 +253,25 @@ struct ContentView: View {
             .disabled(appModel.immersiveSpaceState == .inTransition)
             .padding()
             .glassBackgroundEffect()
+        }
+        // 写真が選択された際の処理
+        .onChange(of: selectedItem) { _, newItem in
+            Task {
+                await appModel.updatePhoto(from: newItem)
+            }
+        }
+        // URLが更新されたらRealityKitエンティティを更新
+        .onChange(of: appModel.selectedPhotoURL) { _, newURL in
+            guard let url = newURL, let entity = spatialPhotoEntity else { return }
+            Task {
+                if var imageComp = try? await ImagePresentationComponent(contentsOf: url) {
+                    imageComp.desiredViewingMode = .spatialStereo
+                    imageComp.screenHeight = kCardHeight
+                    await MainActor.run {
+                        entity.components.set(imageComp)
+                    }
+                }
+            }
         }
     }
 

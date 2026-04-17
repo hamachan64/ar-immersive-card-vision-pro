@@ -19,5 +19,7 @@
 			</array>
 		</dict>
 	</dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>選択した写真を3Dカードに反映するために使用します。</string>
 </dict>
 </plist>

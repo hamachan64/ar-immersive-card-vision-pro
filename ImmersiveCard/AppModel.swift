@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RealityKit
+import PhotosUI
 
 /// アプリ全体の状態を管理するクラス
 /// WindowGroupとImmersiveSpace間で表示モードを共有する
@@ -42,6 +43,42 @@ class AppModel {
     }
     var immersiveSpaceState = ImmersiveSpaceState.closed
 
+    // MARK: - 選択された写真の管理
+
+    /// ユーザーが選択した写真のローカルURL（一時ファイル）
+    var selectedPhotoURL: URL?
+
+    /// ユーザーが選択したPhotosPickerItemを処理し、アプリ内で扱えるURLに変換する
+    func updatePhoto(from item: PhotosPickerItem?) async {
+        guard let item = item else { return }
+
+        do {
+            // データを取得（空間写真の場合はHEIC形式を期待）
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                print("[AppModel] 写真データの取得に失敗しました")
+                return
+            }
+
+            // 一時ファイルとして保存
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("HEIC")
+
+            try data.write(to: tempURL)
+
+            // URLを更新（これによりContentView側が検知可能）
+            self.selectedPhotoURL = tempURL
+            
+            // 重要: 空間写真としての読み込み（事前ロード）
+            await loadSpatialPhoto(from: tempURL)
+
+            print("[AppModel] 写真を更新しました: \(tempURL.lastPathComponent)")
+
+        } catch {
+            print("[AppModel] 写真の更新中にエラーが発生しました: \(error)")
+        }
+    }
+
     // MARK: - 空間写真のデータ管理
 
     /// 空間写真を表示するためのコンポーネント
@@ -49,19 +86,19 @@ class AppModel {
     var isSpatialPhotoLoaded: Bool = false
     var spatialPhotoLoadError: String?
 
-    /// バンドル内の空間写真（Testアセット等）を非同期で読み込む
-    /// RealityViewの中で重い処理を行わないための設計
-    func loadSpatialPhoto() async {
-        guard !isSpatialPhotoLoaded else { return }
+    /// 空間写真（または外部URL）を非同期で読み込む
+    func loadSpatialPhoto(from externalURL: URL? = nil) async {
+        // externalURLが指定されていればそれを使用、なければバンドル内のデフォルトを探す
+        var targetURL: URL? = externalURL
         
-        let possibleFilenames = ["SpatialPhoto", "Picture2", "Picture"]
-        var targetURL: URL? = nil
-        
-        // BundleからファイルURLを安全に取得
-        for filename in possibleFilenames {
-            if let url = Bundle.main.url(forResource: filename, withExtension: "HEIC") {
-                targetURL = url
-                break
+        if targetURL == nil {
+            let possibleFilenames = ["SpatialPhoto", "Picture2", "Picture"]
+            // BundleからファイルURLを安全に取得
+            for filename in possibleFilenames {
+                if let url = Bundle.main.url(forResource: filename, withExtension: "HEIC") {
+                    targetURL = url
+                    break
+                }
             }
         }
         
@@ -76,7 +113,6 @@ class AppModel {
             var comp = try await ImagePresentationComponent(contentsOf: url)
             
             // [CRITICAL] 没入モードの適用
-            // 自動的なパススルー・ディミング、スケール調整、境界線のソフトエッジ処理を再現するため
             comp.desiredViewingMode = .spatialStereoImmersive
             
             self.imagePresentationComponent = comp
