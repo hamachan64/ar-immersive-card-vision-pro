@@ -76,9 +76,9 @@ struct CardSpaceView: View {
 
     /// xcassetsからTextureResourceで読み込んで平面表示（立体感なし）
     private func fallbackDisplay(imageEntity: Entity) async {
-        // 4:3 横長で表示（縦長の空間に合わせてサイズ調整）
-        let picWidth: Float  = 2.4
+        // 画像の本来の比率に合わせてサイズを調整
         let picHeight: Float = 1.8
+        let picWidth: Float  = picHeight * appModel.imageAspectRatio
 
         let pictureModel = ModelEntity(
             mesh: .generateBox(size: [picWidth, picHeight, 0.001]),

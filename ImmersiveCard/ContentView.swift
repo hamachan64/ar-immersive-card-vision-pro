@@ -78,48 +78,24 @@ struct ContentView: View {
 
                 // ==========================================
                 // 空間写真エンティティ（ImagePresentationComponent）
-                // Portalの向こう側に置くことで、3:4にはみ出た写真をクロップ＆遮蔽する
                 // ==========================================
                 let photoEntity = Entity()
                 photoEntity.name = "SpatialPhoto"
                 photoEntity.position = [0, 0, 0]
 
-                // Bundle からHEICファイルのURLを探す
-                let candidateURLs: [URL?] = [
-                    Bundle.main.url(forResource: "Picture2", withExtension: "HEIC"),
-                    Bundle.main.url(forResource: "Picture",  withExtension: "HEIC"),
-                ]
-
-                var usedImagePresentation = false
-                for case let url? in candidateURLs {
-                    if var imageComp = try? await ImagePresentationComponent(contentsOf: url) {
-                        if imageComp.availableViewingModes.contains(.spatialStereo) {
-                            imageComp.desiredViewingMode = .spatialStereo
-                        }
-                        imageComp.screenHeight = kCardHeight
-                        await MainActor.run {
-                            photoEntity.components.set(imageComp)
-                        }
-                        usedImagePresentation = true
-                        break
-                    }
+                // AppModelでの3D化処理（数秒）が完了するまでの代替表示（2D版のPicture）
+                let picWidth = kCardHeight * appModel.imageAspectRatio
+                let fallbackModel = ModelEntity(
+                    mesh: .generateBox(size: [picWidth, kCardHeight, 0.0001], cornerRadius: cardCornerRadius),
+                    materials: [SimpleMaterial(color: .white, isMetallic: false)]
+                )
+                if let tex = try? await TextureResource(named: "Picture") {
+                    var mat = UnlitMaterial()
+                    mat.color = .init(texture: .init(tex))
+                    mat.blending = .transparent(opacity: .init(scale: 1.0))
+                    await MainActor.run { fallbackModel.model?.materials = [mat] }
                 }
-
-                if !usedImagePresentation {
-                    let imageAspect: Float = 4.0 / 3.0
-                    let picWidth = kCardHeight * imageAspect
-                    let fallbackModel = ModelEntity(
-                        mesh: .generateBox(size: [picWidth, kCardHeight, 0.0001], cornerRadius: cardCornerRadius),
-                        materials: [SimpleMaterial(color: .white, isMetallic: false)]
-                    )
-                    if let tex = try? await TextureResource(named: "Picture") {
-                        var mat = UnlitMaterial()
-                        mat.color = .init(texture: .init(tex))
-                        mat.blending = .transparent(opacity: .init(scale: 1.0))
-                        await MainActor.run { fallbackModel.model?.materials = [mat] }
-                    }
-                    await MainActor.run { photoEntity.addChild(fallbackModel) }
-                }
+                await MainActor.run { photoEntity.addChild(fallbackModel) }
 
                 worldEntity.addChild(photoEntity)
                 cardRoot.addChild(worldEntity)
@@ -177,6 +153,30 @@ struct ContentView: View {
                 if let cardFrame = content.entities.first(where: { $0.name == "CardFrame" }) {
                     cardFrame.transform.rotation = dragRotation * baseRotation
                 }
+                
+                // AppModelから読み込んだ画像コンポーネントを適用
+                if let cardFrame = content.entities.first(where: { $0.name == "CardFrame" }),
+                   let photoEntity = cardFrame.findEntity(named: "SpatialPhoto") {
+                    
+                    if appModel.isSpatialPhotoLoaded, let comp = appModel.imagePresentationComponent {
+                        if !photoEntity.components.has(ImagePresentationComponent.self) {
+                            var windowComp = comp
+                            // Window用の表示モードに調整
+                            // AI生成された3D写真なら .spatial3D を、通常の空間写真なら .spatialStereo を優先
+                            if windowComp.availableViewingModes.contains(.spatial3D) {
+                                windowComp.desiredViewingMode = .spatial3D
+                            } else if windowComp.availableViewingModes.contains(.spatialStereo) {
+                                windowComp.desiredViewingMode = .spatialStereo
+                            } else {
+                                windowComp.desiredViewingMode = windowComp.availableViewingModes.first ?? windowComp.desiredViewingMode
+                            }
+                            windowComp.screenHeight = kCardHeight
+                            photoEntity.components.set(windowComp)
+                            // フォールバック用の2D画像を削除
+                            photoEntity.children.removeAll()
+                        }
+                    }
+                }
             }
             .gesture(
                 DragGesture()
@@ -204,6 +204,10 @@ struct ContentView: View {
                 // Window に戻る: すべて再表示してリセット
                 resetCardTransform()
             }
+        }
+        .task {
+            // アセットの非同期読み込みと3D化演算を開始
+            await appModel.loadSpatialPhoto()
         }
         // 「空間に入る / 現実に戻る」ボタン (トグル)
         .ornament(attachmentAnchor: .scene(.bottom)) {
