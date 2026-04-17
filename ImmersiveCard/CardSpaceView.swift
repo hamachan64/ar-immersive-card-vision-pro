@@ -22,14 +22,26 @@ struct CardSpaceView: View {
             // ==========================================
             let imageEntity = Entity()
             imageEntity.name = "SpatialPhotoEntity"
-            imageEntity.position = [0, 1.5, -2.5]
+            
+            // 最初は少し遠くに配置してアニメーションで手前に持ってくる
+            let targetPosition: SIMD3<Float> = [0, 1.7, -2.5]
+            imageEntity.position = [0, 1.7, -3.0] 
+            imageEntity.scale = [0.8, 0.8, 0.8]
             
             content.add(imageEntity)
 
-            // 既にロード済みの場合は初期時にコンポーネントをセット
+            // 既にロード済みの場合はコンポーネントをセット
             if let comp = appModel.imagePresentationComponent {
                 imageEntity.components.set(comp)
             }
+            
+            // 登場アニメーション: 0.6秒かけて本来の位置・サイズへ
+            imageEntity.move(
+                to: Transform(scale: .one, rotation: .init(angle: 0, axis: [0, 1, 0]), translation: targetPosition),
+                relativeTo: nil,
+                duration: 0.6,
+                timingFunction: .easeOut
+            )
         } update: { content in
             // ==========================================
             // AppModelの非同期読み込み状態を監視してUIを更新
