@@ -15,76 +15,49 @@ struct CardSpaceView: View {
     @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
     var body: some View {
-        RealityView { content, attachments in
+        RealityView { content in
             // ==========================================
-            // 空間写真をImagePresentationComponentで表示
+            // 空間写真を設定するためのホストEntity
+            // (状態管理はAppModelに委譲し、View側には重い処理を書かない設計)
             // ==========================================
             let imageEntity = Entity()
             imageEntity.name = "SpatialPhotoEntity"
             imageEntity.position = [0, 1.5, -2.5]
-
-            // ImagePresentationComponent で空間写真を読み込む
-            // ※ Bundle直参照のためには Xcode で .HEIC をバンドルリソースとして追加する必要がある
-            // （xcassetsから外して直接ドラッグ追加：File → Add Files to "ImmersiveCard"）
-            let possibleURLs: [URL?] = [
-                // バンドルリソースとして直接追加した場合
-                Bundle.main.url(forResource: "Picture2", withExtension: "HEIC"),
-                Bundle.main.url(forResource: "Picture",  withExtension: "HEIC"),
-            ]
-
-            var loaded = false
-            for case let url? in possibleURLs {
-                if let imageComp = try? await ImagePresentationComponent(contentsOf: url) {
-                    var comp = imageComp
-                    // spatialStereo が使える（＝空間写真として認識された）場合に要求
-                    if comp.availableViewingModes.contains(.spatialStereo) {
-                        comp.desiredViewingMode = .spatialStereo
-                    }
-                    await MainActor.run {
-                        imageEntity.components.set(comp)
-                    }
-                    loaded = true
-                    break
-                }
-            }
-
-            // 上記が失敗した場合は TextureResource でフォールバック表示
-            if !loaded {
-                await fallbackDisplay(imageEntity: imageEntity)
-            }
-
+            
             content.add(imageEntity)
 
-            // ==========================================
-            // 「現実に戻る」ボタン（RealityView attachments）
-            // ==========================================
-            if let returnPanel = attachments.entity(for: "returnButton") {
-                returnPanel.position = [0, 0.3, -1.5]
-                content.add(returnPanel)
+            // 既にロード済みの場合は初期時にコンポーネントをセット
+            if let comp = appModel.imagePresentationComponent {
+                imageEntity.components.set(comp)
             }
-
-        } attachments: {
-            Attachment(id: "returnButton") {
-                Button {
-                    Task { @MainActor in
-                        await dismissImmersiveSpace()
+        } update: { content in
+            // ==========================================
+            // AppModelの非同期読み込み状態を監視してUIを更新
+            // ==========================================
+            if let imageEntity = content.entities.first(where: { $0.name == "SpatialPhotoEntity" }) {
+                // ロードが完了しコンポーネントが用意された場合
+                if let comp = appModel.imagePresentationComponent {
+                    imageEntity.components.set(comp)
+                    
+                    // フォールバック用の平面Entityが表示されていれば破棄する
+                    if !imageEntity.children.isEmpty {
+                        imageEntity.children.removeAll()
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.uturn.backward.circle.fill")
-                            .font(.title2)
-                        Text("現実に戻る")
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
                 }
-                .glassBackgroundEffect()
+                // エラーが発生してまだフォールバックも表示されていない場合
+                else if appModel.spatialPhotoLoadError != nil && imageEntity.children.isEmpty {
+                    Task { @MainActor in
+                        await fallbackDisplay(imageEntity: imageEntity)
+                    }
+                }
             }
         }
         // 写真アプリと同じ暗転演出：パススルーカメラを暗くして空間写真を浮かび上がらせる
         .preferredSurroundingsEffect(.systemDark)
+        .task {
+            // アセットの非同期読み込みを実行（重い処理をモデルに分離）
+            await appModel.loadSpatialPhoto()
+        }
     }   // body
 
     // MARK: - フォールバック表示

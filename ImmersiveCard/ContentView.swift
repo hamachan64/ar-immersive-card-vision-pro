@@ -36,6 +36,7 @@ public class RotationSystem: System {
 struct ContentView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
+    @Environment(\.dismissImmersiveSpace) private var dismissImmersiveSpace
 
     // ドラッグ回転状態
     @State private var dragRotation: simd_quatf = .init(angle: 0, axis: [0, 1, 0])
@@ -225,20 +226,33 @@ struct ContentView: View {
                 resetCardTransform()
             }
         }
-        // 「空間に入る」ボタン
+        // 「空間に入る / 現実に戻る」ボタン (トグル)
         .ornament(attachmentAnchor: .scene(.bottom)) {
             Button {
                 Task { @MainActor in
-                    await enterCardSpace()
+                    if appModel.immersiveSpaceState == .closed {
+                        await enterCardSpace()
+                    } else if appModel.immersiveSpaceState == .open {
+                        appModel.immersiveSpaceState = .inTransition
+                        await dismissImmersiveSpace()
+                    }
                 }
             } label: {
-                Label("空間に入る", systemImage: "sparkles")
-                    .font(.title3)
-                    .fontWeight(.semibold)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 8)
+                if appModel.immersiveSpaceState == .open {
+                    Label("現実に戻る", systemImage: "arrow.uturn.backward.circle.fill")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                } else {
+                    Label("空間に入る", systemImage: "sparkles")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                }
             }
-            .disabled(appModel.immersiveSpaceState != .closed)
+            .disabled(appModel.immersiveSpaceState == .inTransition)
             .padding()
             .glassBackgroundEffect()
         }
