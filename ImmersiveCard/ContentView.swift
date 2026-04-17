@@ -224,33 +224,48 @@ struct ContentView: View {
             .padding()
             .glassBackgroundEffect()
         }
-        // 「空間に入る / 現実に戻る」ボタン (トグル)
+        // 「空間に入る / 現実に戻る」ボタンと「位置をリセット」ボタン
         .ornament(attachmentAnchor: .scene(.bottom)) {
-            Button {
-                Task { @MainActor in
-                    if appModel.immersiveSpaceState == .closed {
-                        await enterCardSpace()
-                    } else if appModel.immersiveSpaceState == .open {
-                        appModel.immersiveSpaceState = .inTransition
-                        await dismissImmersiveSpace()
+            HStack(spacing: 16) {
+                // 位置リセットボタン
+                Button {
+                    resetCardTransform()
+                } label: {
+                    Label("リセット", systemImage: "arrow.counterclockwise")
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                }
+                .disabled(appModel.immersiveSpaceState != .closed)
+                
+                // 空間に入る / 現実に戻る ボタン
+                Button {
+                    Task { @MainActor in
+                        if appModel.immersiveSpaceState == .closed {
+                            await enterCardSpace()
+                        } else if appModel.immersiveSpaceState == .open {
+                            appModel.immersiveSpaceState = .inTransition
+                            await dismissImmersiveSpace()
+                        }
+                    }
+                } label: {
+                    if appModel.immersiveSpaceState == .open {
+                        Label("現実に戻る", systemImage: "arrow.uturn.backward.circle.fill")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
+                    } else {
+                        Label("空間に入る", systemImage: "sparkles")
+                            .font(.title3)
+                            .fontWeight(.semibold)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 8)
                     }
                 }
-            } label: {
-                if appModel.immersiveSpaceState == .open {
-                    Label("現実に戻る", systemImage: "arrow.uturn.backward.circle.fill")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                } else {
-                    Label("空間に入る", systemImage: "sparkles")
-                        .font(.title3)
-                        .fontWeight(.semibold)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 8)
-                }
+                .disabled(appModel.immersiveSpaceState == .inTransition)
             }
-            .disabled(appModel.immersiveSpaceState == .inTransition)
             .padding()
             .glassBackgroundEffect()
         }

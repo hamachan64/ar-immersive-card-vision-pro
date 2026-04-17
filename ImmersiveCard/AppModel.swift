@@ -14,6 +14,34 @@ import PhotosUI
 @MainActor
 @Observable
 class AppModel {
+    // MARK: - アプリの進行フェーズ
+
+    /// アプリの進行状態を表す列挙型
+    enum AppPhase {
+        case title          // 1: タイトル（ImmersiveCard）
+        case photoSelection // 2: 写真を選択
+        case paint          // 3: ペイントデコレーション
+        case cardPlay       // 4: カード遊び
+    }
+
+    /// 現在の進行フェーズ
+    var phase: AppPhase = .title
+
+    /// 次のフェーズへ進む
+    func nextPhase() {
+        switch phase {
+        case .title:
+            phase = .photoSelection
+        case .photoSelection:
+            phase = .paint
+        case .paint:
+            phase = .cardPlay
+        case .cardPlay:
+            // 遊び終わったら最初に戻る（あるいは現状維持）
+            phase = .title
+        }
+    }
+
     // MARK: - 表示モード
 
     /// 現在の表示状態を表す列挙型
