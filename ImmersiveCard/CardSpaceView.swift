@@ -25,42 +25,23 @@ struct CardSpaceView: View {
                 // VideoPlayerComponent の desiredViewingMode を .spatialStereoImmersive に
                 // 設定することで Vision Pro がステレオ奥行きを持った空間ビデオとして再生する。
                 // ==========================================
-                let videoMaterial = VideoMaterial(avPlayer: player)
-
-                // アスペクト比を保って画面サイズを決定（高さ 2.25m を基準）
-                let screenHeight: Float = 2.25
-                let screenWidth:  Float = screenHeight * appModel.videoAspectRatio
-
-                let videoScreen = ModelEntity(
-                    mesh: .generatePlane(width: screenWidth, height: screenHeight, cornerRadius: 0.05),
-                    materials: [videoMaterial]
-                )
+                // [修正] 平面メッシュ (ModelEntity) を使わず、空の Entity に VideoPlayerComponent を付ける
+                // これにより境界線が消え、isPortal = true でソフトエッジが適用されるようになります
+                let videoScreen = Entity()
                 videoScreen.name = "VideoScreen"
 
-                // VideoPlayerComponent で空間ビデオのステレオ表示と没入モードを有効にする
+                // VideoPlayerComponent の設定
                 var videoComp = VideoPlayerComponent(avPlayer: player)
                 videoComp.desiredViewingMode = .stereo
                 videoComp.desiredSpatialVideoMode = .spatial
+                // [修正] 写真アプリ同様のビネット効果を得るため、メッシュのないEntityに対して .full を指定します
                 videoComp.desiredImmersiveViewingMode = .full
+                
                 videoScreen.components.set(videoComp)
 
-                // 目線の高さ・正面に配置、少し遠くから手前にアニメーション
-                videoScreen.position = [0, 1.6, -3.2]
-                videoScreen.scale    = [0.85, 0.85, 0.85]
-
+                // 正面の最適な位置に配置
+                videoScreen.position = [0, 1.6, -2.5]
                 content.add(videoScreen)
-
-                // 登場アニメーション: 0.6秒かけて本来の位置・サイズへ
-                videoScreen.move(
-                    to: Transform(
-                        scale: .one,
-                        rotation: .init(angle: 0, axis: [0, 1, 0]),
-                        translation: [0, 1.6, -2.5]
-                    ),
-                    relativeTo: nil,
-                    duration: 0.6,
-                    timingFunction: .easeOut
-                )
 
                 // 停止していれば再生を開始（CardPlayView で play 済みだが念のため）
                 player.play()
