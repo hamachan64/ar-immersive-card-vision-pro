@@ -8,6 +8,7 @@
 import SwiftUI
 import RealityKit
 import PhotosUI
+import AVFoundation
 
 /// アプリ全体の状態を管理するクラス
 /// WindowGroupとImmersiveSpace間で表示モードを共有する
@@ -53,6 +54,14 @@ class AppModel {
     /// WindowとImmersiveSpace間で共有する表示モード
     var displayMode: DisplayMode = .windowed
 
+    // MARK: - Scene IDs (UnityのScene切り分けに相当)
+
+    /// メニュー用ウィンドウID (Sec 1, 2, 3)
+    let menuWindowID = "MenuWindow"
+
+    /// カード遊び用ウィンドウID (Sec 4)
+    let cardWindowID = "CardWindow"
+
     // MARK: - ImmersiveSpace ID
 
     /// 既存のイマーシブ空間ID（テスト用）
@@ -71,15 +80,46 @@ class AppModel {
     }
     var immersiveSpaceState = ImmersiveSpaceState.closed
 
-    // MARK: - 選択された写真の管理
+    // MARK: - 選択されたメディアの種別管理
+
+    /// 選択されたメディアの種別
+    enum MediaType {
+        case photo  // 静止画（HEIC等）
+        case video  // 動画（MP4等）
+    }
+
+    /// 現在選択されているメディアの種別（nil = 未選択）
+    var selectedMediaType: MediaType?
 
     /// ユーザーが選択した写真のローカルURL（一時ファイル）
     var selectedPhotoURL: URL?
 
-    /// ユーザーが選択したPhotosPickerItemを処理し、アプリ内で扱えるURLに変換する
+    /// ユーザーが選択した動画のローカルURL（一時ファイルにコピー済み）
+    var selectedVideoURL: URL?
+
+    /// 動画再生用のAVPlayer（フェーズ4でVideoPlayerComponentに渡す）
+    var videoPlayer: AVPlayer?
+
+    /// 動画の実際のアスペクト比（幅 / 高さ）- メッシュサイズ計算に使用
+    var videoAspectRatio: Float = 16.0 / 9.0
+
+    /// ユーザーが選択したPhotosPickerItemを処理し、画像か動画かを判別してアプリ内に保持する
     func updatePhoto(from item: PhotosPickerItem?) async {
         guard let item = item else { return }
 
+        // --- 動画の場合 ---
+        // PhotosPickerItem が動画かどうかは contentType で判別する
+        if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) || $0.conforms(to: .video) || $0.identifier.contains("video") }) {
+            await loadVideo(from: item)
+            return
+        }
+
+        // --- 静止画の場合 ---
+        await loadPhoto(from: item)
+    }
+
+    /// 静止画（HEIC等）を一時ファイルに保存し、空間写真としてロードする
+    private func loadPhoto(from item: PhotosPickerItem) async {
         do {
             // データを取得（空間写真の場合はHEIC形式を期待）
             guard let data = try await item.loadTransferable(type: Data.self) else {
@@ -94,16 +134,78 @@ class AppModel {
 
             try data.write(to: tempURL)
 
-            // URLを更新（これによりContentView側が検知可能）
             self.selectedPhotoURL = tempURL
-            
-            // 重要: 空間写真としての読み込み（事前ロード）
+            self.selectedVideoURL = nil
+            self.videoPlayer = nil
+            self.selectedMediaType = .photo
+
+            // 空間写真としての事前ロード
             await loadSpatialPhoto(from: tempURL)
 
             print("[AppModel] 写真を更新しました: \(tempURL.lastPathComponent)")
 
         } catch {
             print("[AppModel] 写真の更新中にエラーが発生しました: \(error)")
+        }
+    }
+
+    /// 動画をアプリの一時ディレクトリにコピーし、AVPlayerを生成して保持する
+    private func loadVideo(from item: PhotosPickerItem) async {
+        do {
+            // PhotosKit の AVAsset transferable を使って動画URLを取得する
+            // Transferable として URL を直接取得できないため、AVAsset経由で処理する
+            guard let videoData = try await item.loadTransferable(type: Data.self) else {
+                print("[AppModel] 動画データの取得に失敗しました")
+                return
+            }
+
+            // 一時ディレクトリに MP4 として保存
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("mp4")
+
+            try videoData.write(to: tempURL)
+
+            // AVAsset から動画トラックの実際のサイズを取得してアスペクト比を算出する
+            // 空間ビデオは横長（例: 5760x2880）なのでそのまま width/height を使う
+            let asset = AVAsset(url: tempURL)
+            var aspectRatio: Float = 16.0 / 9.0
+            if let track = try? await asset.loadTracks(withMediaType: .video).first {
+                let naturalSize  = try? await track.load(.naturalSize)
+                let preferredTransform = try? await track.load(.preferredTransform)
+                if let size = naturalSize {
+                    // preferredTransform で回転が加わる場合（縦動画等）を考慮
+                    let txSize = size.applying(preferredTransform ?? .identity)
+                    let w = abs(txSize.width)
+                    let h = abs(txSize.height)
+                    if h > 0 { aspectRatio = Float(w / h) }
+                }
+            }
+
+            let player = AVPlayer(url: tempURL)
+
+            // 動画終了時にループ再生するための通知を登録
+            NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: player.currentItem,
+                queue: .main
+            ) { _ in
+                player.seek(to: .zero)
+                player.play()
+            }
+
+            self.selectedVideoURL  = tempURL
+            self.selectedPhotoURL  = nil
+            self.imagePresentationComponent = nil
+            self.isSpatialPhotoLoaded = false
+            self.videoPlayer       = player
+            self.videoAspectRatio  = aspectRatio
+            self.selectedMediaType = .video
+
+            print("[AppModel] 動画を更新しました: \(tempURL.lastPathComponent)")
+
+        } catch {
+            print("[AppModel] 動画の更新中にエラーが発生しました: \(error)")
         }
     }
 

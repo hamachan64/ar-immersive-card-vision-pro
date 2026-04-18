@@ -1,40 +1,27 @@
-//
-//  ImmersiveCardApp.swift
-//  ImmersiveCard
-//
-//  Created by Yuki Hamaguchi on 2026/04/13.
-//
-
 import SwiftUI
 
 @main
 struct ImmersiveCardApp: App {
-
     @State private var appModel = AppModel()
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        // Scene 1: メニュー画面 (Sec 1, 2, 3) - 専用の2Dウィンドウ
+        WindowGroup(id: "MenuWindow") {
+            HomeMenuView()
+                .environment(appModel)
+        }
+        .windowStyle(.plain)
+
+        // Scene 2: カード表示 (Sec 4) - 聖域であるVolumetricウィンドウ
+        WindowGroup(id: "CardWindow") {
+            CardPlayView()
                 .environment(appModel)
         }
         .windowStyle(.volumetric)
-        .defaultSize(width: 0.8, height: 0.8, depth: 0.8, in: .meters) // 回転時にはみ出ないように大きめのサイズを確保
+        .defaultSize(width: 0.8, height: 0.8, depth: 0.8, in: .meters)
 
-        // 既存のイマーシブ空間（テスト用）
-        ImmersiveSpace(id: appModel.immersiveSpaceID) {
-            ImmersiveView()
-                .environment(appModel)
-                .onAppear {
-                    appModel.immersiveSpaceState = .open
-                }
-                .onDisappear {
-                    appModel.immersiveSpaceState = .closed
-                }
-        }
-        .immersionStyle(selection: .constant(.mixed), in: .mixed)
-
-        // カード空間 — .mixed + systemDark で写真アプリと同じ暗転演出を実現
-        ImmersiveSpace(id: appModel.cardSpaceID) {
+        // カード空間 (イマーシブ)
+        ImmersiveSpace(id: "CardSpace") {
             CardSpaceView()
                 .environment(appModel)
                 .onAppear {
