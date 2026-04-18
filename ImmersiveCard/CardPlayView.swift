@@ -87,17 +87,28 @@ struct CardPlayView: View {
                     
                     // --- メディア種別によって表示内容を切り替える ---
                     if appModel.selectedMediaType == .video, let player = appModel.videoPlayer {
-                        let videoMaterial = VideoMaterial(avPlayer: player)
-                        let videoHeight: Float = kCardHeight
-                        let videoWidth:  Float = min(videoHeight * appModel.videoAspectRatio, kCardWidth)
+                        // [修正] videoEntity を定義し、VideoPlayerComponent でステレオ表示を有効にする
+                        let videoEntity = Entity()
+                        videoEntity.name = "VideoScreen"
 
-                        let videoPlane = ModelEntity(
-                            mesh: .generatePlane(width: videoWidth, height: videoHeight, cornerRadius: 0.015),
-                            materials: [videoMaterial]
-                        )
-                        videoPlane.position = [0, 0, 0.002]
-                        cardRoot.addChild(videoPlane)
-                        await MainActor.run { self.videoEntity = videoPlane }
+                        var videoComp = VideoPlayerComponent(avPlayer: player)
+                        // ステレオ表示（空間ビデオの奥行き）を有効にする
+                        videoComp.desiredViewingMode = .stereo
+                        videoComp.desiredSpatialVideoMode = .spatial
+                        
+                        videoEntity.components.set(videoComp)
+                        
+                        // [修正] VideoPlayerComponentはデフォルトで高さ1mのメッシュになるため、
+                        // カードの高さ(kCardHeight=0.4m)に合わせてスケールを調整する
+                        let scaleFactor = kCardHeight
+                        videoEntity.scale = [scaleFactor, scaleFactor, scaleFactor]
+                        
+                        // [重要] cardRoot ではなく worldEntity に追加することで、ポータルの「中」に表示される
+                        videoEntity.position = [0, 0, 0]
+                        worldEntity.addChild(videoEntity)
+                        cardRoot.addChild(worldEntity)
+                        
+                        await MainActor.run { self.videoEntity = videoEntity }
                     } else {
                         let targetURL = appModel.selectedPhotoURL ?? Bundle.main.url(forResource: "Picture2", withExtension: "HEIC")
                         if let url = targetURL, var imageComp = try? await ImagePresentationComponent(contentsOf: url) {
