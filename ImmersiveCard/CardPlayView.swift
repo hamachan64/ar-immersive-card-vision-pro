@@ -164,6 +164,12 @@ struct CardPlayView: View {
                     appModel.videoPlayer?.play()
                 }
             }
+            .onDisappear {
+                // ウィンドウが閉じる際や遷移時に動画を停止する
+                if appModel.selectedMediaType == .video {
+                    appModel.videoPlayer?.pause()
+                }
+            }
             .ornament(attachmentAnchor: .scene(.bottom)) {
                 HStack(spacing: 20) {
                     Button {
