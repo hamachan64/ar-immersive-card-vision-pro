@@ -172,8 +172,10 @@ struct CardPlayView: View {
                         // 自分のウィンドウを確実に閉じる
                         dismiss()
                     } label: { Image(systemName: "house.fill").padding() }
+                    .disabled(appModel.immersiveSpaceState != .closed)
                     
                     Button { resetCardTransform() } label: { Image(systemName: "arrow.counterclockwise").padding() }
+                    .disabled(appModel.immersiveSpaceState != .closed)
 
                     Button {
                         Task { @MainActor in
